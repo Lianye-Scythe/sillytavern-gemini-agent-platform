@@ -1,18 +1,18 @@
-import { SECRET_KEYS, secret_state, writeSecret } from '../../../secrets.js';
+import { SECRET_KEYS, secret_state } from '../../../secrets.js';
 import { MODELS, validModel, validProject, extractProject, safeError, prepareRequest, testRequest } from './core.js';
 
 const NAME = 'gemini_global';
 const SOURCE = 'gemini-agent-platform';
 const context = () => SillyTavern.getContext();
-let busy = false;
-let controller;
+let projectPromise;
 let syncingSource = false;
+let nativeKeyRow;
+let nativeKeyAnchor;
 
 function settings() {
     const all = context().extensionSettings;
     all[NAME] ??= {};
     const value = all[NAME];
-    value.enabled ??= true;
     value.model ??= 'gemini-3.8-flash';
     value.project ??= '';
     value.customModels ??= [];
@@ -30,6 +30,9 @@ function syncSourceUi() {
     facade.value = active ? SOURCE : original.value;
     document.getElementById('vertexai_form').classList.toggle('gg-platform-active', active);
     document.getElementById('gemini-global').hidden = !active;
+    if (active) document.getElementById('gg-key-slot').append(nativeKeyRow);
+    else nativeKeyAnchor.after(nativeKeyRow);
+    document.getElementById('openai_proxy_preset')?.closest('.inline-drawer')?.classList.toggle('gg-platform-proxy-hidden', active);
 }
 
 function updateNativeFields() {
@@ -101,6 +104,7 @@ function status(message, state = '') {
     const el = document.getElementById('gg-status');
     el.textContent = safeError(message);
     el.dataset.state = state;
+    el.hidden = !message;
 }
 
 function addModels() {
@@ -121,20 +125,6 @@ function addModels() {
     }
     if ([...native.options].some(option => option.value === current)) native.value = current;
     own.value = settings().model;
-}
-
-function applyConnection() {
-    const value = settings();
-    const project = document.getElementById('gg-project').value.trim();
-    if (!validProject(project)) throw new Error('請填入有效的 Project ID 或 Project Number，或留空以自動偵測。');
-    value.project = project;
-    value.model = document.getElementById('gg-model').value;
-    value.enabled = true;
-    document.getElementById('gg-enabled').checked = true;
-    $('#main_api').val('openai').trigger('change');
-    addModels();
-    selectSource(SOURCE);
-    context().saveSettingsDebounced();
 }
 
 async function request(data, signal) {
@@ -168,55 +158,43 @@ async function discoverProject(signal) {
     throw new Error('Google 未回傳 Project ID，請手動填寫。');
 }
 
-async function connect() {
-    if (busy) return;
-    busy = true;
-    controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 120000);
-    const input = document.getElementById('gg-key');
-    const newKey = input.value.trim();
-    const button = document.getElementById('gg-connect');
-    button.disabled = true;
-    document.getElementById('gg-cancel').hidden = false;
-    try {
-        const model = document.getElementById('gg-model').value;
-        if (!validModel(model)) throw new Error('請選擇有效模型。');
-        const manual = document.getElementById('gg-project').value.trim();
-        if (manual && !validProject(manual)) throw new Error('Project ID 或 Project Number 格式不正確。');
-        if (newKey) {
-            status('正在儲存 API Key…');
-            const id = await writeSecret(SECRET_KEYS.VERTEXAI, newKey, 'Gemini Global');
-            if (!id) throw new Error('API Key 儲存失敗，請檢查酒館連線。');
-            input.value = '';
-        } else if (!secret_state[SECRET_KEYS.VERTEXAI]) {
-            throw new Error('請先輸入 API Key。');
+async function ensureProject(forceDiscovery = false) {
+    if (projectPromise) return projectPromise;
+    const input = document.getElementById('gg-project');
+    const manual = input.value.trim();
+    if (manual && !validProject(manual)) throw new Error('Project ID 或 Project Number 格式不正確。');
+    function apply(project) {
+        settings().project = project;
+        input.value = project;
+        if (settings().platformActive && context().chatCompletionSettings.chat_completion_source === 'vertexai') {
+            context().chatCompletionSettings.vertexai_express_project_id = project;
+            $('#vertexai_express_project_id').val(project).trigger('input');
         }
-        // A newly supplied key may belong to a different project. Detect again unless
-        // the project field was explicitly edited by the user.
-        const mustDiscover = !manual || (newKey && !document.getElementById('gg-project').dataset.manual);
-        if (mustDiscover) {
-            status('正在自動取得 Project ID…');
-            const project = await discoverProject(controller.signal);
-            document.getElementById('gg-project').value = project;
-            delete document.getElementById('gg-project').dataset.manual;
-        }
-        if (controller.signal.aborted) throw new DOMException('Aborted', 'AbortError');
-        applyConnection();
-        status(`正在測試 ${model}（global）…`);
-        const body = await request(testRequest(model, settings().project), controller.signal);
-        const reply = body.choices?.[0]?.message?.content;
-        if (!reply?.trim()) throw new Error('API 已回應，但沒有文字內容；可稍後重試。');
-        status(`${model} 連線成功 · global · ${reply.trim().slice(0, 80)}`, 'success');
-        $('#api_button_openai').trigger('click');
-    } catch (error) {
-        status(error.name === 'AbortError' ? '測試已取消或超過 120 秒；設定已保留，可重試。' : error.message, 'error');
-    } finally {
-        clearTimeout(timeout);
-        busy = false;
-        button.disabled = false;
-        document.getElementById('gg-cancel').hidden = true;
-        controller = undefined;
+        context().saveSettingsDebounced();
+        status('');
+        return project;
     }
+    if (manual && !forceDiscovery) return apply(manual);
+    if (!secret_state[SECRET_KEYS.VERTEXAI]) throw new Error('請先輸入 API Key，並按酒館的「連線」儲存。');
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 60000);
+    status('正在自動設定專案…');
+    projectPromise = (async () => {
+        try {
+            const project = await discoverProject(controller.signal);
+            delete input.dataset.manual;
+            status('');
+            return apply(project);
+        } catch (error) {
+            const message = error.name === 'AbortError' ? '專案偵測逾時；請在進階設定填入 Project ID 後重試。' : error.message;
+            status(message, 'error');
+            throw new Error(message);
+        } finally {
+            clearTimeout(timeout);
+            projectPromise = undefined;
+        }
+    })();
+    return projectPromise;
 }
 
 function init() {
@@ -229,38 +207,45 @@ function init() {
     const panel = document.createElement('section');
     panel.id = 'gemini-global';
     panel.innerHTML = `
-        <h4>Gemini Agent Platform · API Key</h4>
-        <label class="checkbox_label"><input id="gg-enabled" type="checkbox">啟用最新模型的 global 連線</label>
-        <p class="gg-hint">輸入 Google Cloud API Key 即可使用，不需要服務帳號 JSON。</p>
-        <label for="gg-key">API Key</label>
-        <input id="gg-key" class="text_pole" type="password" autocomplete="new-password" placeholder="輸入新 Key；留空則使用已儲存的 Vertex AI Key">
-        <label for="gg-model">模型</label>
-        <select id="gg-model" class="text_pole"></select>
-        <label for="gg-project">Project ID / Project Number（可自動取得）</label>
-        <input id="gg-project" class="text_pole" type="text" autocomplete="off" placeholder="留空，儲存時自動偵測">
-        <div class="gg-actions">
-            <button id="gg-connect" class="menu_button" type="button">儲存並測試連線</button>
-            <button id="gg-cancel" class="menu_button" type="button" hidden>取消測試</button>
+        <div class="gg-field">
+            <label for="api_key_vertexai">API Key</label>
+            <div id="gg-key-slot"></div>
         </div>
-        <p id="gg-status" role="status" aria-live="polite">準備就緒。選擇模型後按「儲存並測試連線」。</p>
-        <details><summary>自訂模型</summary>
-            <div class="gg-actions"><input id="gg-custom" class="text_pole" aria-label="自訂 Gemini 模型 ID" placeholder="gemini-…">
-            <button id="gg-add" class="menu_button" type="button">加入模型</button></div>
+        <div class="gg-field">
+            <label for="gg-model">模型</label>
+            <select id="gg-model" class="text_pole"></select>
+        </div>
+        <p id="gg-status" role="status" aria-live="polite" hidden></p>
+        <details class="gg-advanced">
+            <summary>進階設定</summary>
+            <div class="gg-field">
+                <label for="gg-project">Project ID / Project Number</label>
+                <input id="gg-project" class="text_pole" type="text" autocomplete="off" placeholder="自動偵測；也可手動填入">
+                <small class="gg-hint">預設自動設定專案與 global 區域。</small>
+            </div>
+            <div class="gg-field">
+                <label for="gg-custom">自訂模型</label>
+                <div class="gg-custom-row">
+                    <input id="gg-custom" class="text_pole" placeholder="gemini-…">
+                    <button id="gg-add" class="menu_button" type="button">加入</button>
+                </div>
+            </div>
         </details>`;
     form.prepend(panel);
     const value = settings();
-    document.getElementById('gg-enabled').checked = value.enabled;
+    // Reuse the actual native input and Key Manager so ST owns saving and masking.
+    const keyInput = document.getElementById('api_key_vertexai');
+    nativeKeyRow = keyInput.parentElement;
+    nativeKeyAnchor = document.createComment('Native Vertex AI key position');
+    nativeKeyRow.before(nativeKeyAnchor);
+    document.getElementById('gg-key-slot').append(nativeKeyRow);
+    keyInput.type = 'password';
+    keyInput.placeholder = '輸入 API Key；留空使用已儲存的金鑰';
     document.getElementById('gg-project').value = value.project;
     addModels();
     installSourceSelector();
-    document.getElementById('gg-connect').addEventListener('click', connect);
-    document.getElementById('gg-cancel').addEventListener('click', () => controller?.abort());
     document.getElementById('gg-project').addEventListener('input', event => {
         event.target.dataset.manual = 'true';
-    });
-    document.getElementById('gg-enabled').addEventListener('change', event => {
-        settings().enabled = event.target.checked;
-        context().saveSettingsDebounced();
     });
     document.getElementById('gg-model').addEventListener('change', event => {
         settings().model = event.target.value;
@@ -286,10 +271,23 @@ function init() {
         status(`已加入 ${model}。是否可用仍取決於 Google 與專案權限。`);
     });
     const ctx = context();
-    ctx.eventSource.on(ctx.eventTypes.CHAT_COMPLETION_SETTINGS_READY, data => {
-        const project = context().chatCompletionSettings.vertexai_express_project_id || settings().project;
+    const active = () => settings().platformActive && context().chatCompletionSettings.chat_completion_source === 'vertexai';
+    // Native Connect saves the native input. Once saved, discover the matching project.
+    ctx.eventSource.on(ctx.eventTypes.SECRET_WRITTEN, async key => {
+        if (key !== SECRET_KEYS.VERTEXAI || !active()) return;
+        const manual = document.getElementById('gg-project').dataset.manual;
+        try { await ensureProject(!manual); } catch (error) { status(error.message, 'error'); }
+    });
+    $('#api_button_openai').on('click.geminiGlobal', async event => {
+        if (!event.originalEvent || !active() || keyInput.value.trim() || !secret_state[SECRET_KEYS.VERTEXAI]) return;
+        try { await ensureProject(); } catch (error) { status(error.message, 'error'); }
+    });
+    ctx.eventSource.on(ctx.eventTypes.CHAT_COMPLETION_SETTINGS_READY, async data => {
+        if (!active() || data.chat_completion_source !== 'vertexai') return;
+        if (![...MODELS, ...settings().customModels].includes(data.model)) return;
         try {
-            prepareRequest(data, { ...settings(), enabled: settings().enabled && settings().platformActive, project });
+            const project = await ensureProject();
+            prepareRequest(data, { ...settings(), enabled: true, project });
         } catch (error) {
             status(error.message, 'error');
             throw error;

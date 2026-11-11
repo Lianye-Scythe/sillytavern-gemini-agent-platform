@@ -1,18 +1,20 @@
 #gemini-global {
-    border: 1px solid var(--SmartThemeBorderColor, #666);
-    border-radius: 8px;
-    padding: 12px;
-    margin-bottom: 16px;
+    border: 0;
+    padding: 0;
+    margin: 0;
+    background: none;
+    box-shadow: none;
 }
-#gemini-global h4 { margin-top: 0; }
-#gemini-global label:not(.checkbox_label) { display: block; margin-top: 8px; }
-#gemini-global .gg-hint { font-size: 0.9em; opacity: 0.8; }
-#gemini-global .gg-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
-#gemini-global .gg-actions input { flex: 1; min-width: 140px; }
-#gg-status { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.9em; }
-#gg-status[data-state="success"] { color: #86d99c; }
+#gemini-global .gg-field { margin: 10px 0; min-width: 0; }
+#gemini-global .gg-field > label { display: block; margin-bottom: 4px; }
+#gemini-global .gg-hint { display: block; opacity: 0.7; font-size: 0.85em; }
+#gemini-global .gg-advanced { margin: 10px 0; }
+#gemini-global .gg-advanced > summary { cursor: pointer; font-size: 0.9em; }
+#gemini-global .gg-custom-row { display: flex; align-items: center; gap: 6px; }
+#gemini-global .gg-custom-row input { flex: 1; min-width: 0; }
+#gemini-global .menu_button { width: auto; flex: 0 0 auto; white-space: nowrap; }
+#gg-status { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.85em; margin: 6px 0; }
 #gg-status[data-state="error"] { color: #ff9d9d; }
-#gg-cancel[hidden] { display: none; }
-#gemini-global button:disabled { opacity: 0.6; cursor: wait; }
-#gemini-global[hidden],
+.gg-platform-proxy-hidden { display: none !important; }
+#gemini-global[hidden], #gg-status[hidden],
 #vertexai_form.gg-platform-active > :not(#gemini-global) { display: none !important; }
