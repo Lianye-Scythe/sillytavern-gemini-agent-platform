@@ -1,0 +1,11 @@
+{
+    "display_name": "Gemini Agent Platform · API Key",
+    "loading_order": 100,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "style.css",
+    "author": "Contributors",
+    "version": "1.0.0",
+    "homePage": "https://github.com/Lianye-Scythe/sillytavern-gemini-agent-platform"
+}
