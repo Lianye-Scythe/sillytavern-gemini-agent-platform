@@ -3,11 +3,103 @@ import { MODELS, validModel, validProject, extractProject, safeError, prepareReq
 
 const NAME = 'gemini_global';
 const SOURCE = 'gemini-agent-platform';
+const CONNECTION_META = 'gemini_agent_platform';
 const context = () => SillyTavern.getContext();
 let projectPromise;
 let syncingSource = false;
 let nativeKeyRow;
 let nativeKeyAnchor;
+let applyingPreset = false;
+let loadingProfile;
+
+function connectionSnapshot() {
+    const value = settings();
+    return { source: SOURCE, model: value.model, project: value.project };
+}
+
+function syncPresetIdentity() {
+    const native = context().chatCompletionSettings;
+    native.extensions ??= {};
+    if (settings().platformActive && native.chat_completion_source === 'vertexai') {
+        native.extensions[CONNECTION_META] = connectionSnapshot();
+    } else {
+        delete native.extensions[CONNECTION_META];
+    }
+}
+
+function restoreConnection(saved) {
+    if (saved?.source !== SOURCE) return false;
+    const value = settings();
+    if (validModel(saved.model)) value.model = saved.model;
+    value.project = validProject(saved.project) ? saved.project : '';
+    if (!MODELS.includes(value.model) && !value.customModels.includes(value.model)) value.customModels.push(value.model);
+    document.getElementById('gg-project').value = value.project;
+    addModels();
+    selectSource(SOURCE);
+    return true;
+}
+
+function installConnectionPersistence() {
+    const ctx = context();
+    const on = (name, handler) => { if (ctx.eventTypes[name]) ctx.eventSource.on(ctx.eventTypes[name], handler); };
+    const profileMarker = profile => profile?.[CONNECTION_META];
+    const selectedProfile = () => {
+        const manager = context().extensionSettings.connectionManager;
+        return manager?.profiles?.find(profile => profile.id === manager.selectedProfile);
+    };
+    const recordProfile = profile => {
+        if (!profile) return;
+        if (profile.exclude?.includes('api')) delete profile[CONNECTION_META];
+        else profile[CONNECTION_META] = settings().platformActive ? connectionSnapshot() : { source: 'native' };
+        context().saveSettingsDebounced();
+    };
+    on('CONNECTION_PROFILE_CREATED', recordProfile);
+    on('CONNECTION_PROFILE_UPDATED', (_old, profile) => recordProfile(profile));
+    on('CONNECTION_PROFILE_LOADED', () => {
+        loadingProfile = undefined;
+        const profile = selectedProfile();
+        if (!restoreConnection(profileMarker(profile))) {
+            if (profile?.api) settings().platformActive = false;
+            syncSourceUi();
+            syncPresetIdentity();
+            context().saveSettingsDebounced();
+        }
+    });
+    const beginProfile = event => {
+        const manager = context().extensionSettings.connectionManager;
+        const id = event.target.id === 'connection_profiles' ? event.target.value : manager?.selectedProfile;
+        const profile = manager?.profiles?.find(entry => entry.id === id);
+        loadingProfile = profile?.api ? profileMarker(profile) ?? { source: 'native' } : undefined;
+    };
+    document.getElementById('connection_profiles')?.addEventListener('change', beginProfile, true);
+    document.getElementById('reload_connection_profile')?.addEventListener('click', beginProfile, true);
+    on('OAI_PRESET_CHANGED_BEFORE', data => {
+        applyingPreset = true;
+        if (!data.settings.bind_preset_to_connection) return;
+        const keepCurrent = settings().platformActive && data.presetName === data.presetNameBefore;
+        const saved = loadingProfile ?? data.preset.extensions?.[CONNECTION_META] ?? (keepCurrent ? connectionSnapshot() : undefined);
+        settings().platformActive = saved?.source === SOURCE;
+        if (!settings().platformActive) return;
+        const value = settings();
+        if (validModel(saved.model)) value.model = saved.model;
+        value.project = validProject(saved.project) ? saved.project : '';
+        if (!MODELS.includes(value.model) && !value.customModels.includes(value.model)) value.customModels.push(value.model);
+        addModels();
+        Object.assign(data.preset, {
+            chat_completion_source: 'vertexai', vertexai_auth_mode: 'express', vertexai_region: 'global',
+            vertexai_model: value.model, vertexai_express_project_id: value.project,
+        });
+        data.preset.extensions ??= {};
+        data.preset.extensions[CONNECTION_META] = connectionSnapshot();
+        document.getElementById('gg-project').value = value.project;
+    });
+    on('OAI_PRESET_CHANGED_AFTER', () => {
+        applyingPreset = false;
+        syncSourceUi();
+        syncPresetIdentity();
+        context().saveSettingsDebounced();
+    });
+}
 
 function settings() {
     const all = context().extensionSettings;
@@ -73,6 +165,7 @@ function selectSource(source) {
         syncingSource = false;
     }
     syncSourceUi();
+    syncPresetIdentity();
     context().saveSettingsDebounced();
 }
 
@@ -92,7 +185,7 @@ function installSourceSelector() {
     original.setAttribute('aria-hidden', 'true');
     facade.addEventListener('change', () => selectSource(facade.value));
     $('#chat_completion_source').on('change.geminiGlobal', () => {
-        if (syncingSource) return;
+        if (syncingSource || applyingPreset) return;
         const native = context().chatCompletionSettings;
         if (original.value !== 'vertexai' || native.vertexai_auth_mode !== 'express') settings().platformActive = false;
         syncSourceUi();
@@ -128,13 +221,22 @@ function addModels() {
 }
 
 async function request(data, signal) {
-    const response = await fetch('/api/backends/chat-completions/generate', {
-        method: 'POST',
-        headers: context().getRequestHeaders(),
-        body: JSON.stringify(data),
-        signal,
+    // This internal lookup intentionally receives a model-not-found response. Keep
+    // it out of chat fetch wrappers that inject tools or interpret 404 as chat failure.
+    const response = await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        const abort = () => xhr.abort();
+        const cleanup = () => signal?.removeEventListener('abort', abort);
+        xhr.open('POST', '/api/backends/chat-completions/generate');
+        for (const [key, value] of Object.entries(context().getRequestHeaders())) xhr.setRequestHeader(key, value);
+        xhr.onload = () => { cleanup(); resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, text: xhr.responseText }); };
+        xhr.onerror = () => { cleanup(); reject(new Error('無法連線到酒館伺服器。')); };
+        xhr.onabort = () => { cleanup(); reject(new DOMException('Aborted', 'AbortError')); };
+        if (signal?.aborted) return reject(new DOMException('Aborted', 'AbortError'));
+        signal?.addEventListener('abort', abort, { once: true });
+        xhr.send(JSON.stringify(data));
     });
-    const text = await response.text();
+    const text = response.text;
     let body;
     try { body = JSON.parse(text); } catch { body = {}; }
     if (!response.ok || body.error) {
@@ -171,6 +273,7 @@ async function ensureProject(forceDiscovery = false) {
             $('#vertexai_express_project_id').val(project).trigger('input');
         }
         context().saveSettingsDebounced();
+        syncPresetIdentity();
         status('');
         return project;
     }
@@ -244,12 +347,14 @@ function init() {
     document.getElementById('gg-project').value = value.project;
     addModels();
     installSourceSelector();
+    installConnectionPersistence();
     document.getElementById('gg-project').addEventListener('input', event => {
         event.target.dataset.manual = 'true';
     });
     document.getElementById('gg-model').addEventListener('change', event => {
         settings().model = event.target.value;
         $('#model_vertexai_select').val(event.target.value).trigger('change');
+        syncPresetIdentity();
         context().saveSettingsDebounced();
     });
     $('#model_vertexai_select').on('change.geminiGlobal', event => {
@@ -257,6 +362,7 @@ function init() {
         if (settings().platformActive && [...MODELS, ...settings().customModels].includes(model)) {
             settings().model = model;
             document.getElementById('gg-model').value = model;
+            syncPresetIdentity();
         }
     });
     document.getElementById('gg-add').addEventListener('click', () => {
@@ -293,6 +399,7 @@ function init() {
             throw error;
         }
     });
+    syncPresetIdentity();
 }
 
 $(init);
