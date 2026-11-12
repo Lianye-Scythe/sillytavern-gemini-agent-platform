@@ -13,6 +13,80 @@ let applyingPreset = false;
 let loadingProfile;
 let previousProxy;
 
+function isPlatformActive() {
+    const ctx = context();
+    return ctx.mainApi === 'openai' && settings().platformActive && ctx.chatCompletionSettings.chat_completion_source === 'vertexai';
+}
+
+function normalizeProfile(profile) {
+    if (profile?.[CONNECTION_META]?.source !== SOURCE || profile.exclude?.includes('api')) return;
+    profile.api = SOURCE;
+    if (profile.exclude?.includes('proxy')) delete profile.proxy;
+    else profile.proxy = 'None';
+    if (profile.exclude?.includes('api-url')) delete profile['api-url'];
+    else profile['api-url'] = 'global';
+}
+
+function installProfileCommands() {
+    const ctx = context();
+    const commands = ctx.SlashCommandParser?.commands;
+    const map = ctx.CONNECT_API_MAP;
+    if (!commands?.api || !commands.proxy || !map?.vertexai) return;
+    // Profiles and the native request service recognize our identity, while
+    // generation still uses ST's canonical Vertex prompt/response converters.
+    map[SOURCE] = { ...map.vertexai };
+    const api = commands.api.callback;
+    commands.api.callback = async function (args, text) {
+        const target = String(text ?? '').trim().toLowerCase();
+        if (!target && isPlatformActive()) return SOURCE;
+        if (target === SOURCE) {
+            await api.call(this, args, 'vertexai');
+            selectSource(SOURCE);
+            return SOURCE;
+        }
+        if (target && isPlatformActive()) selectSource('vertexai');
+        return api.call(this, args, text);
+    };
+    const choices = commands.api.unnamedArgumentList?.[0]?.enumList;
+    if (choices && ctx.SlashCommandEnumValue && !choices.some(choice => choice.value === SOURCE)) {
+        choices.push(new ctx.SlashCommandEnumValue(SOURCE, 'Gemini Agent Platform'));
+    }
+    const proxy = commands.proxy.callback;
+    commands.proxy.callback = function (args, text) {
+        if (isPlatformActive()) {
+            useDirectConnection();
+            return 'None';
+        }
+        return proxy.call(this, args, text);
+    };
+    for (const profile of ctx.extensionSettings.connectionManager?.profiles ?? []) normalizeProfile(profile);
+    ctx.saveSettingsDebounced();
+
+    // ConnectionManagerRequestService bypasses the usual generation event. Carry
+    // profile identity to its final send step so preset merging cannot restore a proxy.
+    const service = ctx.ConnectionManagerRequestService;
+    const chat = ctx.ChatCompletionService;
+    if (!service || !chat) return;
+    const sendProfile = service.sendRequest;
+    service.sendRequest = function (id, prompt, maxTokens, custom, overrides = {}) {
+        const profile = this.getProfile(id);
+        const saved = profile?.[CONNECTION_META];
+        if (saved?.source === SOURCE) {
+            overrides = { ...overrides, chat_completion_source: 'vertexai', [CONNECTION_META]: saved };
+        }
+        return sendProfile.call(this, id, prompt, maxTokens, custom, overrides);
+    };
+    const sendChat = chat.sendRequest;
+    chat.sendRequest = function (data, ...args) {
+        const saved = data[CONNECTION_META];
+        if (saved?.source === SOURCE) {
+            prepareRequest(data, { ...saved, enabled: true, customModels: settings().customModels });
+            delete data[CONNECTION_META];
+        }
+        return sendChat.call(this, data, ...args);
+    };
+}
+
 function useDirectConnection() {
     const native = context().chatCompletionSettings;
     const select = document.getElementById('openai_proxy_preset');
@@ -78,8 +152,11 @@ function installConnectionPersistence() {
     };
     const recordProfile = profile => {
         if (!profile) return;
-        if (profile.exclude?.includes('api')) delete profile[CONNECTION_META];
-        else profile[CONNECTION_META] = settings().platformActive ? connectionSnapshot() : { source: 'native' };
+        if (profile.exclude?.includes('api')) {
+            delete profile[CONNECTION_META];
+            if (profile.api === SOURCE) delete profile.api;
+        } else profile[CONNECTION_META] = isPlatformActive() ? connectionSnapshot() : { source: 'native' };
+        normalizeProfile(profile);
         context().saveSettingsDebounced();
     };
     on('CONNECTION_PROFILE_CREATED', recordProfile);
@@ -383,6 +460,7 @@ function init() {
     document.getElementById('gg-project').value = value.project;
     addModels();
     installSourceSelector();
+    installProfileCommands();
     installConnectionPersistence();
     document.getElementById('gg-project').addEventListener('input', event => {
         event.target.dataset.manual = 'true';
