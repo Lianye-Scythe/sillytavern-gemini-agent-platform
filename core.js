@@ -17,15 +17,19 @@ export function safeError(value) {
     return String(value).replace(/AIza[0-9A-Za-z_-]+/g, '[REDACTED]').slice(0, 800);
 }
 
-export function prepareRequest(data, { enabled, project, customModels = [] }) {
+export function prepareRequest(data, { enabled, project, model: selectedModel, customModels = [] }) {
     if (!enabled || data.chat_completion_source !== 'vertexai') return false;
-    if (![...MODELS, ...customModels].includes(data.model)) return false;
-    if (!validProject(project)) throw new Error('請先在 Gemini Global 面板設定或自動偵測 Project ID。');
-    data.vertexai_auth_mode = 'express';
-    data.vertexai_express_project_id = project;
-    data.vertexai_region = 'global';
+    // Direct routing belongs to the selected source, regardless of model lookup.
     data.reverse_proxy = '';
     data.proxy_password = '';
+    const requested = typeof data.model === 'string' ? data.model.trim() : '';
+    data.model = requested || selectedModel;
+    if (!validModel(data.model)) throw new Error('請在 Gemini Agent Platform 選擇有效的 Gemini 模型。');
+    data.vertexai_auth_mode = 'express';
+    data.vertexai_region = 'global';
+    if (!validProject(project)) throw new Error('請先在 Gemini Global 面板設定或自動偵測 Project ID。');
+    data.vertexai_express_project_id = project;
+    if (![...MODELS, ...customModels].includes(data.model)) return true;
     // New Gemini models use server defaults for sampling. Do not forward old presets.
     for (const key of ['temperature', 'top_p', 'top_k', 'frequency_penalty', 'presence_penalty', 'seed']) {
         delete data[key];

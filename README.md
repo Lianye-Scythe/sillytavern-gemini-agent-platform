@@ -10,6 +10,7 @@ A small SillyTavern UI extension for **Gemini Enterprise Agent Platform (formerl
 - Automatically discovers the project; advanced project and model fields stay collapsed.
 - Uses the native SillyTavern server for requests and native secret storage for the key.
 - Uses an explicit project and `locations/global` for the supported models.
+- Always connects this source directly to Google, even when a helper supplies an empty model or an old proxy setting.
 - Keeps native chat formatting, character prompts, streaming and cancellation.
 - Saves source identity with native Chat Completion presets and connection profiles.
 - Allows manually adding future Gemini model IDs.
@@ -38,9 +39,11 @@ https://github.com/Lianye-Scythe/sillytavern-gemini-agent-platform
 
 若自動取得專案失敗，展開 **進階設定**，填入該金鑰所屬的 **Project ID 或 Project Number** 後重試。更換金鑰時，未手動修改過的專案會重新偵測。要使用其他帳號的 Key，可在原生 Key 管理中切換，再清空進階設定內的專案欄位並測試。
 
-從舊版升級至 **1.0.2** 後，請重新選一次 **Gemini Agent Platform**，並更新既有的連線設定檔／綁定連線的 AI 回應預設。舊版檔案只有原生 `vertexai`，沒有區分新來源的標記。新版會另外保存來源、模型與專案，金鑰仍由原生 Key 管理保管。
+從舊版升級至 **1.0.3** 後，請重新選一次 **Gemini Agent Platform**，並更新既有的連線設定檔／綁定連線的 AI 回應預設。1.0.2 之前的檔案只有原生 `vertexai`，沒有區分新來源的標記。新版會另外保存來源、模型與專案，金鑰仍由原生 Key 管理保管。
 
-擴充清單應顯示 **1.0.2**。若版本仍不同，請檢查是否同時存在「為自己安裝」與「為所有使用者安裝」的同名副本；使用者副本會優先載入。
+**1.0.3 修正舊代理與空模型問題**：選擇新來源時會切換至無代理，模型 ID 若被輔助腳本留空，會使用面板中已選的模型。面板會顯示「Google Cloud 直連；不使用酒館反向代理」，無須另外尋找代理設定。切回其他來源時會還原先前的代理選擇，既有代理預設不會被刪除；未儲存的代理欄位只在目前頁面暫存，不會另存密碼到擴充設定。
+
+擴充清單應顯示 **1.0.3**。若版本仍不同，請檢查是否同時存在「為自己安裝」與「為所有使用者安裝」的同名副本；使用者副本會優先載入。
 
 ## How it works
 
@@ -50,7 +53,7 @@ SillyTavern already supports API-key authentication with an explicit project. Th
 https://aiplatform.googleapis.com/v1/projects/PROJECT_ID/locations/global/publishers/google/models/MODEL_ID:generateContent
 ```
 
-Streaming uses the same resource with `streamGenerateContent`. The extension does not replace `fetch` or rewrite SillyTavern files. A visible source selector maps the new source to ST's native Vertex AI backend; the original selector remains available to ST and other extensions. A scoped `CHAT_COMPLETION_SETTINGS_READY` hook applies only while the new source is selected, supplies the project, Key mode and global location for its models, clears reverse-proxy fields for these direct Google requests, and omits legacy sampling parameters.
+Streaming uses the same resource with `streamGenerateContent`. The extension does not replace `fetch` or rewrite SillyTavern files. A visible source selector maps the new source to ST's native Vertex AI backend; the original selector remains available to ST and other extensions. A scoped `CHAT_COMPLETION_SETTINGS_READY` hook applies only while the new source is selected. Direct routing is independent of model recognition: it clears reverse-proxy fields before project lookup, fills an empty model from the source panel, and supplies the project, Key mode and global location. Bundled and manually added models also omit legacy sampling parameters.
 
 Project discovery sends a request for a deliberately nonexistent model and extracts the project resource from Google's error message. This internal request uses XMLHttpRequest so fetch-based chat/tool interceptors do not mistake the expected lookup error for an unsupported tool call. Normal generation keeps using the native fetch pipeline. No text generation is requested from an existing model during discovery. Google may change its error format; manual project entry remains available.
 
@@ -59,6 +62,7 @@ Project discovery sends a request for a deliberately nonexistent model and extra
 - SillyTavern 1.19.0: real API calls to all three bundled models successfully requested a function call, preserved its thought signature, submitted the function result, and returned the final text.
 - Tavern Helper 4.12.1: mocked native Gemini responses verified tool-to-text transport through its generation API in both non-streaming and SSE modes. This checks response handling, not every third-party script or prompt.
 - Browser checks cover native Connect, preset saving, connection profile loading, source switching, and internal project lookup isolation.
+- A regression fixture injects an empty model and a stale proxy into native and Tavern Helper generation. Non-streaming, SSE, and native Test Message all send the selected model with empty proxy fields; returning to the native source restores its proxy.
 
 ## Credentials and limitations
 

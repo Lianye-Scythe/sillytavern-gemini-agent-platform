@@ -11,6 +11,35 @@ let nativeKeyRow;
 let nativeKeyAnchor;
 let applyingPreset = false;
 let loadingProfile;
+let previousProxy;
+
+function useDirectConnection() {
+    const native = context().chatCompletionSettings;
+    const select = document.getElementById('openai_proxy_preset');
+    if (native.reverse_proxy || native.proxy_password) {
+        previousProxy = { url: native.reverse_proxy, password: native.proxy_password };
+        if (select?.value && select.value !== 'None') settings().previousProxyPreset = select.value;
+    }
+    if (select && select.value !== 'None' && [...select.options].some(option => option.value === 'None')) {
+        $(select).val('None').trigger('change');
+    }
+    native.reverse_proxy = '';
+    native.proxy_password = '';
+    $('#openai_reverse_proxy,#openai_proxy_access_key').val('');
+    $('.reverse_proxy_warning').hide();
+}
+
+function restoreProxy() {
+    const preset = settings().previousProxyPreset;
+    const select = document.getElementById('openai_proxy_preset');
+    if (preset && select && [...select.options].some(option => option.value === preset)) $(select).val(preset).trigger('change');
+    if (previousProxy) {
+        $('#openai_reverse_proxy').val(previousProxy.url).trigger('input');
+        $('#openai_proxy_access_key').val(previousProxy.password).trigger('input');
+        previousProxy = undefined;
+    }
+    delete settings().previousProxyPreset;
+}
 
 function connectionSnapshot() {
     const value = settings();
@@ -80,6 +109,7 @@ function installConnectionPersistence() {
         const saved = loadingProfile ?? data.preset.extensions?.[CONNECTION_META] ?? (keepCurrent ? connectionSnapshot() : undefined);
         settings().platformActive = saved?.source === SOURCE;
         if (!settings().platformActive) return;
+        useDirectConnection();
         const value = settings();
         if (validModel(saved.model)) value.model = saved.model;
         value.project = validProject(saved.project) ? saved.project : '';
@@ -88,6 +118,7 @@ function installConnectionPersistence() {
         Object.assign(data.preset, {
             chat_completion_source: 'vertexai', vertexai_auth_mode: 'express', vertexai_region: 'global',
             vertexai_model: value.model, vertexai_express_project_id: value.project,
+            reverse_proxy: '', proxy_password: '',
         });
         data.preset.extensions ??= {};
         data.preset.extensions[CONNECTION_META] = connectionSnapshot();
@@ -119,6 +150,7 @@ function syncSourceUi() {
     const facade = document.getElementById('gemini-platform-source');
     if (!facade) return;
     const active = settings().platformActive && original.value === 'vertexai';
+    if (active) useDirectConnection();
     facade.value = active ? SOURCE : original.value;
     document.getElementById('vertexai_form').classList.toggle('gg-platform-active', active);
     document.getElementById('gemini-global').hidden = !active;
@@ -143,6 +175,8 @@ function selectSource(source) {
             value.previousVertex = Object.fromEntries(VERTEX_FIELDS.map(key => [key, native[key]]));
         }
         value.platformActive = true;
+        addModels();
+        useDirectConnection();
         Object.assign(native, {
             vertexai_auth_mode: 'express', vertexai_region: 'global',
             vertexai_express_project_id: value.project, vertexai_model: value.model,
@@ -151,6 +185,7 @@ function selectSource(source) {
         const previous = value.previousVertex;
         const restore = value.platformActive && previous;
         value.platformActive = false;
+        if (restore) restoreProxy();
         if (restore) {
             for (const key of VERTEX_FIELDS) {
                 if (Object.hasOwn(previous, key)) native[key] = previous[key];
@@ -310,6 +345,7 @@ function init() {
     const panel = document.createElement('section');
     panel.id = 'gemini-global';
     panel.innerHTML = `
+        <small class="gg-hint">Google Cloud 直連；不使用酒館反向代理。</small>
         <div class="gg-field">
             <label for="api_key_vertexai">API Key</label>
             <div id="gg-key-slot"></div>
@@ -390,7 +426,11 @@ function init() {
     });
     ctx.eventSource.on(ctx.eventTypes.CHAT_COMPLETION_SETTINGS_READY, async data => {
         if (!active() || data.chat_completion_source !== 'vertexai') return;
-        if (![...MODELS, ...settings().customModels].includes(data.model)) return;
+        // Clear legacy proxy fields even if project lookup fails or the helper
+        // produced an empty model. The native status check also needs direct settings.
+        useDirectConnection();
+        data.reverse_proxy = '';
+        data.proxy_password = '';
         try {
             const project = await ensureProject();
             prepareRequest(data, { ...settings(), enabled: true, project });
