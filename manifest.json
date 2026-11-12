@@ -3,9 +3,9 @@
     "loading_order": 100,
     "requires": [],
     "optional": [],
-    "js": "index.js",
-    "css": "style.css",
+    "js": "index.v1.0.5.js",
+    "css": "style.v1.0.5.css",
     "author": "Contributors",
-    "version": "1.0.4",
+    "version": "1.0.5",
     "homePage": "https://github.com/Lianye-Scythe/sillytavern-gemini-agent-platform"
 }

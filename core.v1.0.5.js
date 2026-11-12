@@ -1,3 +1,4 @@
+export const CORE_VERSION = '1.0.5';
 export const MODELS = Object.freeze(['gemini-4-carbon', 'gemini-4-argon', 'gemini-3.8-flash']);
 
 export function validModel(value) {

@@ -14,7 +14,7 @@
 #gemini-global .gg-custom-row input { flex: 1; min-width: 0; }
 #gemini-global .menu_button { width: auto; flex: 0 0 auto; white-space: nowrap; }
 #gg-status { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.85em; margin: 6px 0; }
-#gg-status[data-state="error"] { color: #ff9d9d; }
+#gg-status[data-state="error"], #gg-runtime-conflict { color: #ff9d9d; }
 .gg-platform-proxy-hidden { display: none !important; }
 #gemini-global[hidden], #gg-status[hidden],
 #vertexai_form.gg-platform-active > :not(#gemini-global) { display: none !important; }

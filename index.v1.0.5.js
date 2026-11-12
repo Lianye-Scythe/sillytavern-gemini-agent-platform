@@ -1,6 +1,7 @@
 import { SECRET_KEYS, secret_state } from '../../../secrets.js';
-import { MODELS, validModel, validProject, extractProject, safeError, prepareRequest, testRequest } from './core.js';
+import { CORE_VERSION, MODELS, validModel, validProject, extractProject, safeError, prepareRequest, testRequest } from './core.v1.0.5.js';
 
+const RUNTIME_VERSION = '1.0.5';
 const NAME = 'gemini_global';
 const SOURCE = 'gemini-agent-platform';
 const CONNECTION_META = 'gemini_agent_platform';
@@ -418,9 +419,29 @@ function init() {
         toastr.error('Gemini Global 需要支援 Vertex AI Project ID 的酒館版本（1.13.1 以上）。');
         return;
     }
-    if (document.getElementById('gemini-global')) return;
+    const existing = document.getElementById('gemini-global');
+    if (existing) {
+        if (existing.dataset.runtimeVersion !== RUNTIME_VERSION) {
+            const message = `Gemini Agent Platform ${RUNTIME_VERSION} 已載入，但另一份舊擴充已先建立介面。請停用重複的 Gemini 擴充，再重新整理。`;
+            let warning = document.getElementById('gg-runtime-conflict');
+            if (!warning) {
+                warning = document.createElement('p');
+                warning.id = 'gg-runtime-conflict';
+                warning.setAttribute('role', 'alert');
+                existing.prepend(warning);
+            }
+            warning.textContent = message;
+            toastr.error(message, 'Gemini Agent Platform');
+        }
+        return;
+    }
+    if (CORE_VERSION !== RUNTIME_VERSION) {
+        toastr.error('Gemini Agent Platform 的程式與核心檔版本不一致，請更新擴充並重新整理。');
+        return;
+    }
     const panel = document.createElement('section');
     panel.id = 'gemini-global';
+    panel.dataset.runtimeVersion = RUNTIME_VERSION;
     panel.innerHTML = `
         <small class="gg-hint">Google Cloud 直連；不使用酒館反向代理。</small>
         <div class="gg-field">
@@ -434,6 +455,7 @@ function init() {
         <p id="gg-status" role="status" aria-live="polite" hidden></p>
         <details class="gg-advanced">
             <summary>進階設定</summary>
+            <small id="gg-runtime-version" class="gg-hint">實際執行版本：${RUNTIME_VERSION}</small>
             <div class="gg-field">
                 <label for="gg-project">Project ID / Project Number</label>
                 <input id="gg-project" class="text_pole" type="text" autocomplete="off" placeholder="自動偵測；也可手動填入">

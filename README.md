@@ -40,13 +40,15 @@ https://github.com/Lianye-Scythe/sillytavern-gemini-agent-platform
 
 若自動取得專案失敗，展開 **進階設定**，填入該金鑰所屬的 **Project ID 或 Project Number** 後重試。更換金鑰時，未手動修改過的專案會重新偵測。要使用其他帳號的 Key，可在原生 Key 管理中切換，再清空進階設定內的專案欄位並測試。
 
-從舊版升級至 **1.0.4** 後，已有新來源標記的連線設定檔會自動更新為 `api: gemini-agent-platform`、`proxy: None` 與 `global`，並保留刻意排除的欄位。原生 Vertex AI 設定檔不會被轉換。1.0.2 之前的檔案只有原生 `vertexai`，沒有區分新來源的標記；這類檔案請重新選一次 **Gemini Agent Platform**，再更新連線設定檔／綁定連線的 AI 回應預設。金鑰仍由原生 Key 管理保管。
+從舊版升級至 **1.0.5** 後，已有新來源標記的連線設定檔會自動更新為 `api: gemini-agent-platform`、`proxy: None` 與 `global`，並保留刻意排除的欄位。原生 Vertex AI 設定檔不會被轉換。1.0.2 之前的檔案只有原生 `vertexai`，沒有區分新來源的標記；這類檔案請重新選一次 **Gemini Agent Platform**，再更新連線設定檔／綁定連線的 AI 回應預設。金鑰仍由原生 Key 管理保管。
 
 **1.0.3 修正舊代理與空模型問題**：選擇新來源時會切換至無代理，模型 ID 若被輔助腳本留空，會使用面板中已選的模型。面板會顯示「Google Cloud 直連；不使用酒館反向代理」，無須另外尋找代理設定。切回其他來源時會還原先前的代理選擇，既有代理預設不會被刪除；未儲存的代理欄位只在目前頁面暫存，不會另存密碼到擴充設定。
 
 **1.0.4 補齊建立設定檔視窗**：API 顯示並儲存為 `gemini-agent-platform`，代理預設顯示 `None`（無代理），不再讀到舊代理。也支援 `/api gemini-agent-platform` 與酒館原生的設定檔請求介面。
 
-擴充清單應顯示 **1.0.4**。若版本仍不同，請檢查是否同時存在「為自己安裝」與「為所有使用者安裝」的同名副本；使用者副本會優先載入。
+**1.0.5 修正更新後仍執行舊程式的載入問題**：程式、核心與樣式改用含版本號的檔名，避免舊 `index.js`／`core.js` 資源繼續被使用。展開 **進階設定** 可看到 **實際執行版本：1.0.5**；這個值來自執行中的程式，而非 Git 提交或清單中的 manifest。若另一份舊擴充已先建立介面，會明確顯示重複載入警告。
+
+更新後請重新整理頁面，確認擴充清單與進階設定的實際執行版本都是 **1.0.5**。如果出現重複擴充警告，請停用其他舊的 Gemini 擴充副本再重新整理。「為自己安裝」與「為所有使用者安裝」的同名副本也可能同時存在；使用者副本會優先載入。
 
 ## How it works
 
@@ -69,6 +71,7 @@ Project discovery sends a request for a deliberately nonexistent model and extra
 - Browser checks cover native Connect, preset saving, connection profile loading, source switching, and internal project lookup isolation.
 - A regression fixture injects an empty model and a stale proxy into native and Tavern Helper generation. Non-streaming, SSE, and native Test Message all send the selected model with empty proxy fields; returning to the native source restores its proxy.
 - Browser checks inspect the actual Create Connection Profile dialog and saved API/proxy fields, reload the profile, and send mocked profile-service requests with and without a preset while another source is selected. Upgrade checks cover marked legacy profiles and preserve native profiles and excluded fields.
+- A stale-resource fixture reproduces a 1.0.4 manifest with old code and missing profile callbacks. With 1.0.5, old resource URLs can still return stale code while the versioned resources load the correct runtime and callbacks. A separate duplicate-module fixture verifies an explicit conflict warning instead of silently keeping the older interface.
 
 ## Credentials and limitations
 
