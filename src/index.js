@@ -1,7 +1,7 @@
-import { SECRET_KEYS, secret_state } from '../../../secrets.js';
-import { CORE_VERSION, MODELS, validModel, validProject, extractProject, safeError, prepareRequest, testRequest } from './core.v1.0.5.js';
+import { SECRET_KEYS, secret_state } from '../../../../secrets.js';
+import { CORE_VERSION, MODELS, validModel, validProject, extractProject, safeError, prepareRequest, testRequest } from './core.js?v=1.0.6';
 
-const RUNTIME_VERSION = '1.0.5';
+const RUNTIME_VERSION = '1.0.6';
 const NAME = 'gemini_global';
 const SOURCE = 'gemini-agent-platform';
 const CONNECTION_META = 'gemini_agent_platform';

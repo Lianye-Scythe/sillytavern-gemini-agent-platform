@@ -1,96 +1,44 @@
-# SillyTavern Gemini Agent Platform
+# Gemini Agent Platform for SillyTavern
 
-A small SillyTavern UI extension for **Gemini Enterprise Agent Platform (formerly Vertex AI)** API keys and explicit `global` endpoints. No service-account JSON, server plugin, external proxy, build step, or additional package is required.
+在 SillyTavern 中使用 Google Cloud API Key 連接 Gemini Enterprise Agent Platform，無須服務帳號 JSON。
 
-## Features
+擴充會新增獨立的 **Gemini Agent Platform** 聊天補全來源，使用 Google Cloud 的 `global` 端點，並整合酒館原生的金鑰管理、測試訊息與連線設定檔。
 
-- Adds a separate **Gemini Agent Platform** choice to Chat Completion Source, alongside the existing **Google Vertex AI** choice.
-- Provides `gemini-4-carbon`, `gemini-4-argon`, and `gemini-3.8-flash`, plus manual model IDs.
-- Reuses SillyTavern's native key field, Key Manager, Connect and Test Message controls.
-- Automatically discovers the project; advanced project and model fields stay collapsed.
-- Uses the native SillyTavern server for requests and native secret storage for the key.
-- Uses an explicit project and `locations/global` for the supported models.
-- Always connects this source directly to Google, even when a helper supplies an empty model or an old proxy setting.
-- Keeps native chat formatting, character prompts, streaming and cancellation.
-- Saves source identity with native Chat Completion presets and connection profiles.
-- Native profile creation records `API: gemini-agent-platform` and `Proxy Preset: None`.
-- Allows manually adding future Gemini model IDs.
+## 安裝
 
-## Install / 安裝
+已於 **SillyTavern 1.19.0** 測試。使用前，請確認 Google Cloud 專案與 API Key 具備所需模型的存取權限。
 
-Requires SillyTavern **1.13.1 or newer** with the Vertex AI API-key, project and region controls. **1.19.0 is the tested and recommended version**, including for preset/profile persistence and tool calls; older builds may have different events or server-side Gemini conversions.
-
-在酒館開啟「擴充功能 → 安裝擴充功能」，輸入：
+在酒館開啟「擴充功能 → 安裝擴充功能」，貼上：
 
 ```text
 https://github.com/Lianye-Scythe/sillytavern-gemini-agent-platform
 ```
 
-選擇「為自己安裝」，完成後重新整理頁面。也可以把此儲存庫解壓至 `SillyTavern/public/scripts/extensions/third-party/sillytavern-gemini-agent-platform/`，讓該資料夾直接包含 `manifest.json`，再重新整理。
+安裝完成後重新整理頁面。
 
-## Connect / 使用
+## 使用
 
-1. 開啟「API 連線」，API 選擇「聊天補全」，來源選擇新增的 **Gemini Agent Platform**。
-2. 輸入自己的 **Google Cloud API Key**，選擇模型。這不是 Google AI Studio 的金鑰設定。
-3. 按酒館原本的 **連線**。金鑰由酒館儲存，擴充會自動取得專案並使用 `global`。
-4. 按酒館原本的 **測試訊息**，驗證模型能否回覆。
-5. 主畫面只有 Key、模型與收合的 **進階設定**，沒有額外外框或重複的連線按鈕。
+1. 在「API 連線」選擇 **聊天補全**。
+2. 將來源設為 **Gemini Agent Platform**。
+3. 輸入 Google Cloud API Key，並選擇模型。
+4. 按酒館原生的 **連線** 儲存金鑰，再按 **測試訊息** 驗證。
+5. 如需保留設定，使用酒館原生的連線設定檔儲存。
 
-原本的 **Google Vertex AI** 來源保留，切回時會還原先前的驗證模式、區域、專案與模型設定。服務帳號 JSON 維持由原本的來源管理。
+內建模型 ID：`gemini-4-carbon`、`gemini-4-argon`、`gemini-3.8-flash`。其他模型可在「進階設定」手動加入；是否可用取決於 Google 與專案權限。
 
-若自動取得專案失敗，展開 **進階設定**，填入該金鑰所屬的 **Project ID 或 Project Number** 後重試。更換金鑰時，未手動修改過的專案會重新偵測。要使用其他帳號的 Key，可在原生 Key 管理中切換，再清空進階設定內的專案欄位並測試。
+專案預設自動偵測。若偵測失敗，可在「進階設定」填入金鑰所屬的 Project ID 或 Project Number。
 
-從舊版升級至 **1.0.5** 後，已有新來源標記的連線設定檔會自動更新為 `api: gemini-agent-platform`、`proxy: None` 與 `global`，並保留刻意排除的欄位。原生 Vertex AI 設定檔不會被轉換。1.0.2 之前的檔案只有原生 `vertexai`，沒有區分新來源的標記；這類檔案請重新選一次 **Gemini Agent Platform**，再更新連線設定檔／綁定連線的 AI 回應預設。金鑰仍由原生 Key 管理保管。
+## 注意事項
 
-**1.0.3 修正舊代理與空模型問題**：選擇新來源時會切換至無代理，模型 ID 若被輔助腳本留空，會使用面板中已選的模型。面板會顯示「Google Cloud 直連；不使用酒館反向代理」，無須另外尋找代理設定。切回其他來源時會還原先前的代理選擇，既有代理預設不會被刪除；未儲存的代理欄位只在目前頁面暫存，不會另存密碼到擴充設定。
+- 此來源固定直連 Google Cloud，不使用酒館的反向代理。
+- 金鑰交由酒館原生儲存，與 **Google Vertex AI Express** 共用金鑰欄位；服務帳號 JSON 使用另一個欄位。
+- 擴充沿用酒館的 Vertex AI 後端。工具呼叫、思考與多模態功能依酒館版本而定；尚未實作 Gemini 4 超長輸出的續傳流程。
+- Google 的模型權限、計費與配額仍適用。
 
-**1.0.4 補齊建立設定檔視窗**：API 顯示並儲存為 `gemini-agent-platform`，代理預設顯示 `None`（無代理），不再讀到舊代理。也支援 `/api gemini-agent-platform` 與酒館原生的設定檔請求介面。
+## 更新
 
-**1.0.5 修正更新後仍執行舊程式的載入問題**：程式、核心與樣式改用含版本號的檔名，避免舊 `index.js`／`core.js` 資源繼續被使用。展開 **進階設定** 可看到 **實際執行版本：1.0.5**；這個值來自執行中的程式，而非 Git 提交或清單中的 manifest。若另一份舊擴充已先建立介面，會明確顯示重複載入警告。
+在酒館擴充清單更新後，重新整理頁面。「進階設定」中的 **實際執行版本** 應與擴充清單一致；若出現重複載入警告，請停用舊副本後再重新整理。
 
-更新後請重新整理頁面，確認擴充清單與進階設定的實際執行版本都是 **1.0.5**。如果出現重複擴充警告，請停用其他舊的 Gemini 擴充副本再重新整理。「為自己安裝」與「為所有使用者安裝」的同名副本也可能同時存在；使用者副本會優先載入。
+## 授權
 
-## How it works
-
-SillyTavern already supports API-key authentication with an explicit project. This extension configures that existing path:
-
-```text
-https://aiplatform.googleapis.com/v1/projects/PROJECT_ID/locations/global/publishers/google/models/MODEL_ID:generateContent
-```
-
-Streaming uses the same resource with `streamGenerateContent`. The extension does not replace `fetch` or rewrite SillyTavern files. A visible source selector maps the new source to ST's native Vertex AI backend; the original selector remains available to ST and other extensions. A scoped `CHAT_COMPLETION_SETTINGS_READY` hook applies only while the new source is selected. Direct routing is independent of model recognition: it clears reverse-proxy fields before project lookup, fills an empty model from the source panel, and supplies the project, Key mode and global location. Bundled and manually added models also omit legacy sampling parameters.
-
-The native `/api` and `/proxy` callbacks report the platform identity and no proxy while this source is active. The connection API map registers that identity against the existing Vertex backend. Profile-service requests carry profile metadata through preset merging and apply direct routing at the native chat service's final send step, including when another source is currently selected. The wire request still uses ST's `vertexai` converter; the saved profile API is `gemini-agent-platform`.
-
-Project discovery sends a request for a deliberately nonexistent model and extracts the project resource from Google's error message. This internal request uses XMLHttpRequest so fetch-based chat/tool interceptors do not mistake the expected lookup error for an unsupported tool call. Normal generation keeps using the native fetch pipeline. No text generation is requested from an existing model during discovery. Google may change its error format; manual project entry remains available.
-
-## Validation
-
-- SillyTavern 1.19.0: real API calls to all three bundled models successfully requested a function call, preserved its thought signature, submitted the function result, and returned the final text.
-- Tavern Helper 4.12.1: mocked native Gemini responses verified tool-to-text transport through its generation API in both non-streaming and SSE modes. This checks response handling, not every third-party script or prompt.
-- Browser checks cover native Connect, preset saving, connection profile loading, source switching, and internal project lookup isolation.
-- A regression fixture injects an empty model and a stale proxy into native and Tavern Helper generation. Non-streaming, SSE, and native Test Message all send the selected model with empty proxy fields; returning to the native source restores its proxy.
-- Browser checks inspect the actual Create Connection Profile dialog and saved API/proxy fields, reload the profile, and send mocked profile-service requests with and without a preset while another source is selected. Upgrade checks cover marked legacy profiles and preserve native profiles and excluded fields.
-- A stale-resource fixture reproduces a 1.0.4 manifest with old code and missing profile callbacks. With 1.0.5, old resource URLs can still return stale code while the versioned resources load the correct runtime and callbacks. A separate duplicate-module fixture verifies an explicit conflict warning instead of silently keeping the older interface.
-
-## Credentials and limitations
-
-- No credentials, user project IDs or private configuration are bundled.
-- Keys are saved through SillyTavern's native `writeSecret` API, not extension settings, localStorage or this repository. Project and model settings are saved with the user's SillyTavern settings.
-- This uses the native Vertex AI API-key secret slot. Changing the key also changes the key used by native Vertex AI Express mode; its service-account JSON slot is separate.
-- Requests go through your SillyTavern server to Google; there is no third-party relay or telemetry.
-- The extension does not grant model access or bypass Google billing, quotas, key restrictions or IAM policies. Connection tests are real API calls and may incur normal usage charges.
-- It adds model IDs; it does not fetch Google's complete model catalog.
-- Reasoning controls, tool calls, image/audio input and other advanced features depend on the installed SillyTavern backend's model support. In particular, older builds may use default thinking for Gemini 4. These advanced features are not added by this extension.
-- This uses ordinary v1 generation; Gemini 4's v1beta1 continuation-token workflow for very long output is not implemented. Tool-based text transport does not itself add that workflow.
-- Selecting another source stops applying the request hook. Existing native connection settings and the saved Key remain in place.
-
-## References
-
-- [SillyTavern extension development](https://docs.sillytavern.app/for-contributors/writing-extensions/)
-- [Google Gemini 4 quickstart](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/start/get-started-with-gemini-4?hl=en)
-- [Google function calling](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/tools/function-calling)
-
-## License
-
-MIT. Unofficial community extension; not affiliated with Google or SillyTavern.
+[MIT](LICENSE)。本專案為社群擴充，與 Google、SillyTavern 無隸屬關係。
